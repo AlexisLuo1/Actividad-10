@@ -1,0 +1,111 @@
+import java.io.IOException;
+import java.nio.file.*;
+import java.util.*;
+import java.util.regex.*;
+
+public class Main {
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        List<String> contraseñas = new ArrayList<>();
+        Path archivoLog = Paths.get("registro_validaciones.txt");
+
+        
+        try {
+            Files.write(archivoLog, "".getBytes());
+        } catch (IOException e) {
+            System.err.println("Error al preparar el archivo: " + e.getMessage());
+        }
+
+        System.out.println("Ingresa contraseñas para validar (escribe 'salir' para terminar):");
+
+
+        Optional<String> input;
+        do {
+            System.out.print("Contraseña: ");
+            input = Optional.of(scanner.nextLine().trim());
+            input.filter(i -> !i.equalsIgnoreCase("salir") && !i.isEmpty())
+                    .ifPresent(contraseñas::add);
+        } while (input.isPresent() && !input.get().equalsIgnoreCase("salir"));
+
+        System.out.println("\nValidando contraseñas...\n");
+
+        List<Thread> hilos = new ArrayList<>();
+
+
+        contraseñas.forEach(pass -> {
+            Thread hilo = new Thread(new ValidadorContraseña(pass, archivoLog));
+            hilos.add(hilo);
+            hilo.start();
+        });
+
+
+        hilos.forEach(h -> {
+            try {
+                h.join();
+            } catch (InterruptedException e) {
+                System.err.println("Error en hilo: " + e.getMessage());
+            }
+        });
+
+        System.out.println("\nValidación completada. Resultados en 'registro_validaciones.txt'");
+    }
+}
+
+class ValidadorContraseña implements Runnable {
+    private final String contraseña;
+    private final Path archivoLog;
+
+    public ValidadorContraseña(String contraseña, Path archivoLog) {
+        this.contraseña = contraseña;
+        this.archivoLog = archivoLog;
+    }
+
+    @Override
+    public void run() {
+        StringBuilder salida = new StringBuilder();
+
+        salida.append("Analizando: ").append(contraseña).append("\n");
+
+
+        boolean longitudOK = contraseña.length() >= 8;
+        int mayus = contar("[A-Z]", contraseña);
+        int minus = contar("[a-z]", contraseña);
+        int numeros = contar("\\d", contraseña);
+        int especiales = contar("[^a-zA-Z0-9]", contraseña);
+
+        boolean mayusOK = mayus >= 2;
+        boolean minusOK = minus >= 3;
+        boolean numOK = numeros >= 1;
+        boolean espOK = especiales >= 1;
+
+        salida.append(" - Longitud mínima de 8: ").append(longitudOK ? "✔" : "✘").append("\n");
+        salida.append(" - Al menos 2 mayúsculas: ").append(mayusOK ? "✔" : "✘").append(" (").append(mayus).append(")\n");
+        salida.append(" - Al menos 3 minúsculas: ").append(minusOK ? "✔" : "✘").append(" (").append(minus).append(")\n");
+        salida.append(" - Al menos 1 número: ").append(numOK ? "✔" : "✘").append(" (").append(numeros).append(")\n");
+        salida.append(" - Al menos 1 carácter especial: ").append(espOK ? "✔" : "✘").append(" (").append(especiales).append(")\n");
+
+        if (longitudOK && mayusOK && minusOK && numOK && espOK) {
+            salida.append(" ✅ Contraseña válida\n");
+        } else {
+            salida.append(" ❌ Contraseña inválida\n");
+        }
+
+        System.out.println(salida);
+
+
+        synchronized (archivoLog) { 
+            try {
+                Files.write(archivoLog, (salida.toString() + "\n").getBytes(), StandardOpenOption.APPEND);
+            } catch (IOException e) {
+                System.err.println("Error al escribir en el archivo: " + e.getMessage());
+            }
+        }
+    }
+
+    private int contar(String regex, String texto) {
+        Matcher matcher = Pattern.compile(regex).matcher(texto);
+        int count = 0;
+        while (matcher.find()) count++;
+        return count;
+    }
+}
